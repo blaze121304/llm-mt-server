@@ -53,10 +53,10 @@
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
 
-        <!-- Spring AI: OpenAI (ChatClient + EmbeddingModel) -->
+        <!-- Spring AI: Ollama (ChatClient + EmbeddingModel) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
+            <artifactId>spring-ai-ollama-spring-boot-starter</artifactId>
         </dependency>
 
         <!-- Spring AI: PgVector VectorStore -->

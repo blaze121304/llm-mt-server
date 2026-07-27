@@ -1,5 +1,5 @@
 # llm-mt-server 프로젝트 분석 보고서
-> 최초 작성: 2026-05-29 | 최종 업데이트: 2026-05-29 | 버전: v1.0
+> 최초 작성: 2026-05-29 | 최종 업데이트: 2026-07-27 | 버전: v1.2
 
 ---
 
@@ -10,30 +10,29 @@
 - 언어: Java 21
 - 프레임워크: Spring Boot 3.3.5, Spring AI 1.0.0
 - Vector DB: PostgreSQL + pgvector (`spring-ai-pgvector-store-spring-boot-starter`)
-- LLM: OpenAI GPT-4o (ChatClient), Embedding: `text-embedding-3-small`
+- LLM: Ollama Qwen 3.5 (로컬), Embedding: `nomic-embed-text` (768차원)
 - 빌드: Maven (pom.xml)
 - 목적: Jira 이슈 데이터를 Vector DB에서 유사도 검색 후 LLM으로 장애 해결 가이드 생성
 
 ---
 
-## 2. 현재 상태 (2026-05-29)
+## 2. 현재 상태 (2026-07-27)
 
 ### Git 상태
 - 브랜치: `master`
-- 초기 구현 완료 (v1.0)
 
 ### 구현 완료 목록
-- [x] `pom.xml` — 의존성 구성 (Spring AI BOM, OpenAI/PgVector 스타터, Lombok, Validation)
+- [x] `pom.xml` — 의존성 구성 (Spring AI BOM, Ollama/PgVector 스타터, Lombok, Validation)
 - [x] `VectorStoreConfig.java` — PgVectorStore 빈 + ChatClient 빈 + 시스템 프롬프트 정의
 - [x] `JiraRagService.java` — RAG 비즈니스 로직 (유사도 검색 Top-K=3, project_key 권한 필터)
 - [x] `JiraBotController.java` — POST `/api/v1/jira-bot/ask` REST 엔드포인트
 - [x] `JiraBotRequest.java` — 요청 DTO (record)
 - [x] `JiraBotResponse.java` — 응답 DTO (record)
 - [x] `GlobalExceptionHandler.java` — Validation 오류 + 전역 예외 처리 (`ProblemDetail`)
-- [x] `application.yml` — OpenAI API 키, DB, 임베딩 모델 프로퍼티 매핑
+- [x] `application.yml` — Ollama 설정, DB, 임베딩 모델 프로퍼티 매핑
+- [x] Jira 이슈 데이터 적재 배치 — 별도 구현 완료 (이 서버 외부)
 
 ### 다음 할 일
-- [ ] Jira 이슈 데이터 적재 파이프라인 구현 (Vector DB ingestion)
 - [ ] 단위/통합 테스트 작성
 - [ ] Docker Compose (PostgreSQL + pgvector 로컬 개발 환경)
 
@@ -89,10 +88,10 @@ llm-mt-server/
 └────┬──────────────────────────────┬─────────────┘
      │                              │
 ┌────▼──────────┐       ┌──────────▼──────────────┐
-│ PgVectorStore │       │ OpenAI ChatClient        │
-│ (pgvector)    │       │ (GPT-4o)                 │
-│ text-embed-   │       │ system prompt: 문어체    │
-│ 3-small       │       │ 비즈니스 톤앤매너        │
+│ PgVectorStore │       │ Ollama ChatClient        │
+│ (pgvector)    │       │ (Qwen 3.5 로컬)          │
+│ nomic-embed-  │       │ system prompt: 문어체    │
+│ text (768dim) │       │ 비즈니스 톤앤매너        │
 └───────────────┘       └─────────────────────────┘
 ```
 
@@ -116,10 +115,10 @@ llm-mt-server/
 
 | 빈 | 타입 | 설정 |
 |----|------|------|
-| `vectorStore` | `PgVectorStore` | dimensions=1536, COSINE_DISTANCE, initializeSchema=false |
+| `vectorStore` | `PgVectorStore` | dimensions=768, COSINE_DISTANCE, initializeSchema=false |
 | `chatClient` | `ChatClient` | defaultSystem=문어체 비즈니스 프롬프트 (Hallucination 차단 지시) |
 
-- `EmbeddingModel` 자동 구성: `spring-ai-openai-spring-boot-starter` → `application.yml`의 `text-embedding-3-small` 설정 매핑
+- `EmbeddingModel` 자동 구성: `spring-ai-ollama-spring-boot-starter` → `application.yml`의 `nomic-embed-text` 설정 매핑
 - `VectorStore` 빈 직접 정의 시 auto-configuration은 `@ConditionalOnMissingBean`에 의해 비활성화됨
 
 ### 5-2. `JiraRagService.java`
@@ -178,13 +177,13 @@ Response 400 (Validation):
 ```
 Spring Boot 3.3.5
 Spring AI 1.0.0 (BOM)
-  ├── spring-ai-openai-spring-boot-starter     # ChatClient + EmbeddingModel (text-embedding-3-small)
-  └── spring-ai-pgvector-store-spring-boot-starter  # PgVectorStore
-spring-boot-starter-web                        # REST API
-spring-boot-starter-validation                 # @Valid, @NotBlank, @NotEmpty
-spring-boot-starter-jdbc                       # JdbcTemplate (PgVectorStore 의존)
-postgresql                                     # JDBC 드라이버 (runtime)
-lombok                                         # @Slf4j, @RequiredArgsConstructor
+  ├── spring-ai-ollama-spring-boot-starter         # ChatClient + EmbeddingModel (nomic-embed-text)
+  └── spring-ai-pgvector-store-spring-boot-starter # PgVectorStore
+spring-boot-starter-web                            # REST API
+spring-boot-starter-validation                     # @Valid, @NotBlank, @NotEmpty
+spring-boot-starter-jdbc                           # JdbcTemplate (PgVectorStore 의존)
+postgresql                                         # JDBC 드라이버 (runtime)
+lombok                                             # @Slf4j, @RequiredArgsConstructor
 ```
 
 ---
@@ -197,19 +196,34 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/jiradb}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
   ai:
-    openai:
-      api-key: ${OPENAI_API_KEY}          # 필수: 환경변수
-      chat.options.model: gpt-4o
-      embedding.options.model: text-embedding-3-small
-    vectorstore.pgvector:
-      initialize-schema: false
-      dimensions: 1536
-      distance-type: COSINE_DISTANCE
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        options:
+          model: qwen3.5
+          temperature: 0.1
+      embedding:
+        options:
+          model: nomic-embed-text
+    vectorstore:
+      pgvector:
+        initialize-schema: false
+        dimensions: 768
+        distance-type: COSINE_DISTANCE
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.llmmt: DEBUG
+    org.springframework.ai: INFO
 ```
 
-- API 키는 환경변수 `OPENAI_API_KEY`로만 주입 (하드코딩 금지)
-- DB 접속 정보도 환경변수 기반 (기본값은 로컬 개발용)
+- Ollama는 로컬 서버 (`http://localhost:11434`) 기준
+- DB 접속 정보는 환경변수 기반 (기본값은 로컬 개발용)
 
 ---
 
@@ -226,4 +240,4 @@ spring:
 
 ## 요약
 
-llm-mt-server는 Spring AI 표준 스택(PgVector + OpenAI)을 활용하여 Jira 이슈 기반 장애 해결 이력을 RAG 방식으로 서빙하는 서버이다. `project_key` 메타데이터 기반 접근 제어로 권한 없는 데이터의 노출을 원천 차단하며, Hallucination 방지 시스템 프롬프트를 통해 신뢰도 높은 비즈니스 응답을 제공한다.
+llm-mt-server는 Spring AI 표준 스택(PgVector + Ollama)을 활용하여 Jira 이슈 기반 장애 해결 이력을 RAG 방식으로 서빙하는 서버이다. `project_key` 메타데이터 기반 접근 제어로 권한 없는 데이터의 노출을 원천 차단하며, Hallucination 방지 시스템 프롬프트를 통해 신뢰도 높은 비즈니스 응답을 제공한다. LLM은 로컬 Ollama(Qwen 3.5)를 사용하여 외부 API 의존성 없이 운영된다.

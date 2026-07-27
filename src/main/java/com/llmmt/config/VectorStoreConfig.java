@@ -23,15 +23,10 @@ public class VectorStoreConfig {
             "해당 장애에 대한 과거 해결 히스토리를 찾지 못했습니다."
             """;
 
-    /**
-     * PgVectorStore 빈을 명시적으로 구성한다.
-     * EmbeddingModel은 spring-ai-openai-spring-boot-starter가 application.yml의
-     * spring.ai.openai.embedding.options.model(text-embedding-3-small) 설정으로 자동 구성한다.
-     */
     @Bean
     public VectorStore vectorStore(JdbcTemplate jdbcTemplate, EmbeddingModel embeddingModel) {
         return PgVectorStore.builder(jdbcTemplate, embeddingModel)
-                .dimensions(1536)
+                .dimensions(768)
                 .distanceType(PgVectorStore.PgDistanceType.COSINE_DISTANCE)
                 .initializeSchema(false)
                 .build();
